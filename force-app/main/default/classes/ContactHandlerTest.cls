@@ -27,8 +27,8 @@ private class ContactHandlerTest {
         Account acc = new Account(Name ='New Account');
         insert acc;
         List<Contact> testContacts = new List<Contact>{
-            new Contact(LastName = 'Smith', AccountId = testAcc.Id),
-            new Contact(LastName = 'Jones', AccountId = testAcc.Id)
+            new Contact(LastName = 'Smith', AccountId = acc.Id),
+            new Contact(LastName = 'Jones', AccountId = acc.Id)
         };
         insert testContacts;
     }
