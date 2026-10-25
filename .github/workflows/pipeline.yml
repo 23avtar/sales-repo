@@ -91,13 +91,7 @@ jobs:
           fi
 
       - name: Authenticate to Salesforce (${{ env.ENV_NAME }}) via JWT
-        env:
-          SF_CONSUMER_KEY: ${{ secrets.SF_CONSUMER_KEY }}
         run: |
-          # 1. Recreate the server.key file using the secret text
-          echo "${{ secrets.SF_JWT_KEY }}" > server.key
-          
-          # 2. Run the Salesforce login command
           sf org login jwt \
             --client-id "${{ env.SF_CONSUMER_KEY }}" \
             --jwt-key-file server.key \
@@ -105,8 +99,6 @@ jobs:
             --instance-url "${{ env.INSTANCE_URL }}" \
             --alias target-org \
             --set-default
-            
-          # 3. Securely delete the file after authentication
           rm server.key
 
       - name: Generate Delta Package
