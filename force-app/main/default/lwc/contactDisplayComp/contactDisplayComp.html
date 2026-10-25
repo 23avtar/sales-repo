@@ -1,0 +1,14 @@
+<template>
+    <lightning-card title="Show Contact">
+        <template lwc:if={hasContacts}>
+            <template for:each={contacts} for:item="data">
+                <p key={data.Id}>
+                    <lightning-formatted-text value={data.LastName}></lightning-formatted-text>
+                </p>
+            </template>
+        </template>
+        <template lwc:elseif={error}>
+            <p>{error}</p>
+        </template>
+    </lightning-card>
+</template>
