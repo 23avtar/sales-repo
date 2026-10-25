@@ -7,7 +7,7 @@
 # 3. PR merged             → Actual deployment runs
 #
 # BRANCH → ORG MAPPING:
-# dev     → DEV Sandbox    (NoTestRun)
+# develop     → DEV Sandbox    (NoTestRun)
 # sit     → SIT Sandbox    (RunLocalTests)
 # uat     → UAT Sandbox    (RunLocalTests)
 # main    → PRODUCTION     (RunAllTestsInOrg)
@@ -49,7 +49,7 @@ jobs:
 
       - name: Set Environment Variables by Branch
         run: |
-          if [ "${{ github.ref_name }}" == "dev" ] || [ "${{ github.base_ref }}" == "dev" ]; then
+          if [ "${{ github.ref_name }}" == "develop" ] || [ "${{ github.base_ref }}" == "develop" ]; then
             echo "SF_CONSUMER_KEY=${{ secrets.SF_CONSUMER_KEY_DEV }}" >> $GITHUB_ENV
             echo "SF_USERNAME=${{ secrets.SF_USERNAME_DEV }}" >> $GITHUB_ENV
             echo "TEST_LEVEL=NoTestRun" >> $GITHUB_ENV
