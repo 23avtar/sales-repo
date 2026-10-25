@@ -50,4 +50,17 @@ private class ContactHandlerTest {
         System.assertEquals(0, result.size());
     }
 
+    @isTest
+    static void testGetContactExceptionHandling() {
+        String invalidId = '001000000000000AAA';
+        try{
+            Test.startTest();
+            List<Contact> result = ContactHandler.getContact(invalidId);
+            Test.stopTest();
+            System.assert(false, 'An AuraHandledException should have been thrown.');
+        }catch(AuraHandledException e){
+            System.assertNotEquals(null, e.getMessage(), 'The exception message should not be empty.');
+        }
+    }
+
 }
