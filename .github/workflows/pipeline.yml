@@ -1,0 +1,159 @@
+# ================================================================
+# Salesforce Delta Deployment Pipeline
+#
+# FLOW:
+# 1. Developer creates PR  → Validation runs automatically
+# 2. Validation passes     → Reviewer approves PR manually
+# 3. PR merged             → Actual deployment runs
+#
+# BRANCH → ORG MAPPING:
+# dev     → DEV Sandbox    (NoTestRun)
+# sit     → SIT Sandbox    (RunLocalTests)
+# uat     → UAT Sandbox    (RunLocalTests)
+# main    → PRODUCTION     (RunAllTestsInOrg)
+# ================================================================
+name: Salesforce Delta Pipeline
+
+on:
+  push:
+    branches:
+      - dev
+      - sit
+      - uat
+      - main
+  pull_request:
+    branches:
+      - dev
+      - sit
+      - uat
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Full Git History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Salesforce CLI
+        run: |
+          npm install --global @salesforce/cli
+          sf --version
+
+      - name: Install sfdx-git-delta
+        run: echo y | sf plugins install sfdx-git-delta
+
+      - name: Set Environment Variables by Branch
+        run: |
+          if [ "${{ github.ref_name }}" == "dev" ] || [ "${{ github.base_ref }}" == "dev" ]; then
+            echo "SF_CONSUMER_KEY=${{ secrets.SF_CONSUMER_KEY_DEV }}" >> $GITHUB_ENV
+            echo "SF_USERNAME=${{ secrets.SF_USERNAME_DEV }}" >> $GITHUB_ENV
+            echo "TEST_LEVEL=NoTestRun" >> $GITHUB_ENV
+            echo "ENV_NAME=DEV" >> $GITHUB_ENV
+            echo "INSTANCE_URL=https://test.salesforce.com" >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "sit" ] || [ "${{ github.base_ref }}" == "sit" ]; then
+            echo "SF_CONSUMER_KEY=${{ secrets.SF_CONSUMER_KEY_SIT }}" >> $GITHUB_ENV
+            echo "SF_USERNAME=${{ secrets.SF_USERNAME_SIT }}" >> $GITHUB_ENV
+            echo "TEST_LEVEL=RunLocalTests" >> $GITHUB_ENV
+            echo "ENV_NAME=SIT" >> $GITHUB_ENV
+            echo "INSTANCE_URL=https://test.salesforce.com" >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "uat" ] || [ "${{ github.base_ref }}" == "uat" ]; then
+            echo "SF_CONSUMER_KEY=${{ secrets.SF_CONSUMER_KEY_UAT }}" >> $GITHUB_ENV
+            echo "SF_USERNAME=${{ secrets.SF_USERNAME_UAT }}" >> $GITHUB_ENV
+            echo "TEST_LEVEL=RunLocalTests" >> $GITHUB_ENV
+            echo "ENV_NAME=UAT" >> $GITHUB_ENV
+            echo "INSTANCE_URL=https://test.salesforce.com" >> $GITHUB_ENV
+
+          elif [ "${{ github.ref_name }}" == "main" ] || [ "${{ github.base_ref }}" == "main" ]; then
+            echo "SF_CONSUMER_KEY=${{ secrets.SF_CONSUMER_KEY_PROD }}" >> $GITHUB_ENV
+            echo "SF_USERNAME=${{ secrets.SF_USERNAME_PROD }}" >> $GITHUB_ENV
+            echo "TEST_LEVEL=RunAllTestsInOrg" >> $GITHUB_ENV
+            echo "ENV_NAME=PROD" >> $GITHUB_ENV
+            echo "INSTANCE_URL=https://login.salesforce.com" >> $GITHUB_ENV
+          fi
+
+      - name: Write JWT Key File
+        run: |
+          if [ "${{ env.ENV_NAME }}" == "DEV" ]; then
+            echo "${{ secrets.SF_JWT_KEY_DEV }}" > server.key
+          elif [ "${{ env.ENV_NAME }}" == "SIT" ]; then
+            echo "${{ secrets.SF_JWT_KEY_SIT }}" > server.key
+          elif [ "${{ env.ENV_NAME }}" == "UAT" ]; then
+            echo "${{ secrets.SF_JWT_KEY_UAT }}" > server.key
+          elif [ "${{ env.ENV_NAME }}" == "PROD" ]; then
+            echo "${{ secrets.SF_JWT_KEY_PROD }}" > server.key
+          fi
+
+      - name: Authenticate to Salesforce (${{ env.ENV_NAME }}) via JWT
+        run: |
+          sf org login jwt \
+            --client-id "${{ env.SF_CONSUMER_KEY }}" \
+            --jwt-key-file server.key \
+            --username "${{ env.SF_USERNAME }}" \
+            --instance-url "${{ env.INSTANCE_URL }}" \
+            --alias target-org \
+            --set-default
+          rm server.key
+
+      - name: Generate Delta Package
+        run: |
+          mkdir -p delta
+          sf sgd source delta \
+            --to HEAD \
+            --from HEAD~1 \
+            --output-dir delta \
+            --source-dir force-app \
+            --generate-delta
+          echo "====== Delta Components for ${{ env.ENV_NAME }} ======"
+          cat delta/package/package.xml
+
+      - name: Validate Delta (${{ env.ENV_NAME }})
+        if: github.event_name == 'pull_request'
+        run: |
+          if grep -q '<members>' delta/package/package.xml; then
+            VALIDATE_TEST_LEVEL=${{ env.TEST_LEVEL }}
+            if [ "$VALIDATE_TEST_LEVEL" == "NoTestRun" ]; then
+              VALIDATE_TEST_LEVEL="RunLocalTests"
+            fi
+            sf project deploy validate \
+              --manifest delta/package/package.xml \
+              --target-org target-org \
+              --test-level $VALIDATE_TEST_LEVEL \
+              --wait 60
+          else
+            echo "No Salesforce metadata changes found. Skipping validation."
+          fi
+
+      - name: Deploy Delta to ${{ env.ENV_NAME }}
+        if: github.event_name == 'push'
+        run: |
+          if grep -q '<members>' delta/package/package.xml; then
+            sf project deploy start \
+              --manifest delta/package/package.xml \
+              --target-org target-org \
+              --test-level ${{ env.TEST_LEVEL }} \
+              --wait 60
+          else
+            echo "No Salesforce metadata changes found. Skipping deployment."
+          fi
+
+      - name: Deploy Destructive Changes
+        if: github.event_name == 'push'
+        run: |
+          if [ -f "delta/destructiveChanges/destructiveChanges.xml" ] && \
+             grep -q '<types>' delta/destructiveChanges/destructiveChanges.xml; then
+            sf project deploy start \
+              --manifest delta/destructiveChanges/package.xml \
+              --post-destructive-changes delta/destructiveChanges/destructiveChanges.xml \
+              --target-org target-org \
+              --test-level NoTestRun \
+              --wait 30
+          else
+            echo "No destructive changes found. Skipping."
+          fi
