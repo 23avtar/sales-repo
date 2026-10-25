@@ -1,5 +1,5 @@
 public without sharing class ContactHandler {
-    @AuraEnabled(cachable=true)
+    @AuraEnabled(cacheable=true)
     public static List<Contact> getContact(Id accountId) {
         try {
             if(accountId == null){

@@ -13,7 +13,7 @@ export default class ContactDisplayComp extends LightningElement {
             this.error = null;
         }else if(error){
             this.contacts = [];
-            this.error = JSON.stringify(error);
+            this.error = error?.body?.message;
         }
     }
 
